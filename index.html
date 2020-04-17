@@ -1,0 +1,856 @@
+<p>﻿&laquo;dd_version: 2&raquo;</p>
+<h1><a href="#the-como-gmc-project" id="the-como-gmc-project">The COMO-GMC project</a></h1>
+<p>This document is an accompanying file of the paper:</p>
+<p>Momen et al. <strong>xxxxxxxxxxxx</strong> Full list of authors</p>
+<p>In this paper, we estimated the association between <strong>pairs of mental disorders and subsequent general medical conditions (GMCs)</strong>. 31 GMCs were included in the paper, which could be grouped into 9 GMC categories. In this document, we will refer to the 9 GMC categories; and the Stata code for one specific pair is provided: the association between prior Mood Disorders and subsequent Circulatory Disorders. Follow the steps 1-x below in order to replicate the analyses.</p>
+<hr />
+<h2><a href="#1-data" id="1-data">1. Data</a></h2>
+<p>There are two necessary datasets for the estimations: data_disease and land.</p>
+<h3><a href="#dataset-data-disease" id="dataset-data-disease">dataset <strong>data_disease</strong></a></h3>
+<p>The Danish Civil Registration System was established on April 1, 1968, and registered all persons alive and living in Denmark. After this date, all persons born or immigrating to Denmark were included. Dataset <strong>data_disease</strong> contains information on the subsample of this group who were born in Denmark between January 1, 1900 and December 31, 2015 (N=7387479).</p>
+<p>Information includes a unique personal identification number used to link information from several registers (<strong>pnr</strong>), birthdate (<strong>fdato</strong>), sex (<strong>kqn</strong>: M for males and K for females), legal status (<strong>stat</strong>: 1 for active citizens, 70 for disappeared, 80 for emigrated and 90 for dead) and date of disappearance, emigration or death (<strong>statd</strong>).</p>
+<p>In addition, information on the disorders of interest in this were included.</p>
+<p>10 mental disorders from the Danish Psychiatric Central Research Register: Organic Disorders (<strong>D00</strong>), Substance Use disorders (<strong>D10</strong>), Schizophrenia and related disorders (<strong>D20</strong>), Mood Disorders (<strong>D30</strong>), Neurotic Disorders (<strong>D41</strong>), Eating Disorders (<strong>D51</strong>), Personality Disorders (<strong>D61</strong>), Intellectual Disabilities (<strong>D70</strong>), Developmental Disorders (<strong>D81</strong>) and Behavioral Disorders (<strong>D91</strong>).</p>
+<p>9 GMC categories ascertained using criteria detailed in the paper from the National Patient Register, the National Prescription Register and the Cause of Death Register: Circulatory Disorders (<strong>CIRC</strong>), Endocrine Disorders (<strong>ENDO</strong>), Pulmonary System Disorders and Allergies (<strong>PULMO</strong>), Gastrointestinal Disorders (<strong>GASTRO</strong>), Urogenital Disorders (<strong>URO</strong>), Musculoskeletal Disorders (<strong>MUSCULO</strong>), Hematological Disorders (<strong>HEMATO</strong>), Cancer (<strong>CANCER</strong>) and Neurological Disorders (<strong>NEURO</strong>).</p>
+<p><strong>According to Danish regulations, it is not allowed to share personal data, so an invented case is used here to show the data structure.</strong> This invented person will be used throughout the whole code example. She was born on May 31, 1985 and emigrated from Denmark on March 13, 2015. She received a diagnosis of Substance Use disorders for the first time on October 15, 2005; Mood Disorders on December 1, 2010; Anxiety Disorders on April 13, 2014; and Circulatory Disorders on November 10, 2014.</p>
+<pre><code></code></pre>
+<pre><code>
+     +------------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato | kqn | stat |     statd | D00 |       D10 | D20 |       D30 |
+     | invented_person | 31may1985 |   K |   80 | 13mar2015 |   . | 15oct2005 |   . | 01dec2010 |
+     |-----------------+-----------+------------------------------------------------------------|
+     |       D41 | D51 | D61 | D70 | D81  | D91  |      circ  | endo  | pulmo  | gastro  | uro  |
+     | 13apr2014 |   . |   . |   . |   .  |   .  | 10nov2014  |    .  |     .  |      .  |   .  |
+     |------------------------------------------------------------------------------------------|
+     |       musculo        |        hemato        |        cancer        |        neuro        |
+     |             .        |             .        |             .        |            .        |
+     +------------------------------------------------------------------------------------------+
+
+</code></pre>
+<h3><a href="#dataset-land" id="dataset-land">dataset <strong>land</strong></a></h3>
+<p>Dataset <strong>land</strong> contains information regarding periods of living in Denmark for all persons in <strong>data_disease</strong>. Each period of Danish residence is defined with a starting date (<strong>tflytd</strong>) and ending date (<strong>fflytd</strong>)</p>
+<p>Invented data for the same invented person above is used to show the data structure. This person was living in Denmark since birth (May 31, 1985) until emigration (March 13, 2015) except for a period that she moved abroad (from August 1, 1997 to January 5, 1998).</p>
+<p>land_disease: <em>This table includes invented data (not real person)</em></p>
+<pre><code></code></pre>
+<pre><code>
+     +-----------------------------------------+
+     |             pnr      tflytd      fflytd |
+     |-----------------------------------------|
+  1. | invented_person   31may1985   01aug1997 |
+  2. | invented_person   05jan1998   13mar2015 |
+     +-----------------------------------------+
+
+</code></pre>
+<hr />
+<h2><a href="#2-population-follow-up-time-mds-and-gmcs" id="2-population-follow-up-time-mds-and-gmcs">2. Population, follow-up time, MDs and GMCs</a></h2>
+<p>With these two datasets, we can set the study population, the specific follow-up time for each person, and information on the mental disorder of interest (Mood Disorders) and GMC of interest (Circulatory GMCs).</p>
+<h3><a href="#left-truncation" id="left-truncation">Left truncation</a></h3>
+<p>For every person, follow-up starts on age at January 1, 2000 or at 1 years, whichever occurs later. Variable <strong>entryD</strong> indicates date at start of follow-up and variable <strong>entryA</strong> is generated to indicate age at start of follow-up.</p>
+<pre><code></code></pre>
+<pre><code>. gen entryD=max(td(01jan2000), (fdato+365.25))
+
+. gen entryA=(entryD-fdato)/365.25
+
+. format entryD %td
+
+</code></pre>
+<h3><a href="#right-censoring" id="right-censoring">Right censoring</a></h3>
+<p>For every person, follow-up ends on December 31, 2016, death, emigration or disappearance, whichever occurs first. Follow-up for persons developing Circulatory GMCs will end on the date of onset of the disorder, but this information will be included later. Variable <strong>exitD</strong> indicates data at end of follow-up and variable <strong>exitA</strong> is generated to indicate age at end of follow-up.</p>
+<pre><code>. gen exitD=min(td(31dec2016), statd)
+
+. gen exitA=(exitD-fdato)/365.25
+
+. format exitD %td 
+
+</code></pre>
+<h3><a href="#eliminate-those-with-negative-follow-up-time" id="eliminate-those-with-negative-follow-up-time">Eliminate those with negative follow-up time</a></h3>
+<p>Some persons died or emigrated before the follow-up started on January 1, 2000 (or age 1 years). These persons need to be excluded from the sample. An easy way to identify them is because their follow-up time finishes before it starts, so we keep in the sample only those whose follow-up starts before it finishes.</p>
+<pre><code>. drop if entryA&gt;exitA
+
+</code></pre>
+<h3><a href="#include-only-those-living-in-denmark-at-beginning-of-follow-up" id="include-only-those-living-in-denmark-at-beginning-of-follow-up">Include only those living in Denmark at beginning of follow-up</a></h3>
+<p>Some persons were living outside Denmark on the date of start of follow-up (variable <strong>entryA</strong>). We need to keep only those residing in the country on that date. We use information from the dataset <strong>land</strong> to obtain this information.</p>
+<pre><code>. merge 1:m pnr using &quot;land.dta&quot;
+
+. keep if entryD&gt;=tflytd &amp; entryD&lt;fflytd
+
+</code></pre>
+<p>The sample now consists of people who were living in Denmark on the date of start of follow-up (January 1, 2000 or the date they turned 1 year old, whichever occured later).</p>
+<pre><code></code></pre>
+<p><em>This table includes invented data (not real person)</em></p>
+<pre><code>
+     +------------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato | kqn | stat |     statd | D00 |       D10 | D20 |       D30 |
+     | invented_person | 31may1985 |   K |   80 | 13mar2015 |   . | 15oct2005 |   . | 01dec2010 |
+     |-----------------+-----------+------------------------------------------------------------|
+     |       D41 | D51 | D61 | D70 | D81  | D91  |      circ  | endo  | pulmo  | gastro  | uro  |
+     | 13apr2014 |   . |   . |   . |   .  |   .  | 10nov2014  |    .  |     .  |      .  |   .  |
+     |----------------------------------------------------------------+-------------------------|
+     | musculo  | hemato  | cancer  | neuro  |    entryD  |   entryA  |     exitD  |     exitA  |
+     |       .  |      .  |      .  |     .  | 01jan2000  | 14.58727  | 13mar2015  |  29.78234  |
+     |------------------------------------------------------------------------------------------|
+     |                    tflytd                  |                     fflytd                  |
+     |                 05jan1998                  |                  13mar2015                  |
+     +------------------------------------------------------------------------------------------+
+
+</code></pre>
+<h3><a href="#information-on-onset-of-gmc-of-interest-circulatory-gmcs" id="information-on-onset-of-gmc-of-interest-circulatory-gmcs">Information on onset of GMC of interest (Circulatory GMCs)</a></h3>
+<p>Information on the GMC of interest is included at this stage. Variable <strong>onsetD</strong> contains the date of onset of the specific disorder, and variable <strong>onsetA</strong> contains the age at onset.</p>
+<pre><code>. gen onsetD=circ
+
+. format onsetD %td
+
+. gen onsetA=(onsetD-fdato)/365.25
+
+</code></pre>
+<p>If GMC onset occurs before the end of follow-up, the date (<strong>exitD</strong>) and age (<strong>exitA</strong>) for end of follow-up are replaced with date (<strong>onsetD</strong>) and age (<strong>onsetA</strong>) of onset for the GMC. . replace exitD=onsetD if onsetD&lt;=exitD</p>
+<p>. replace exitA=onsetA if onsetA&lt;=exitA</p>
+<p>Variable <strong>fail</strong> is generated to indicate the type outcome at follow-up end - 0 for censoring, 1 for GMC onset, 70 for disappearance, 80 for emigration and 90 for death. Note that some persons can have two outcomes on the same day (e.g. death and onset of Circulatory GMCs) - in this case GMC onset will be the type of outcome.</p>
+<pre><code>. gen fail=0
+
+. replace fail=stat if (!missing(statd) &amp; statd==exitD &amp; (stat==70|stat==80|stat==90))
+
+. replace fail=1 if onsetD&lt;=exitD
+
+</code></pre>
+<p>For someone developing Circulatory Disorders before the start of follow-up, now exit will occur before entry. These are the prevalent cases and need to be <em>washed out</em>.</p>
+<pre><code>. *count gives the number of people with prevalent Circulatory Disorders at the start of follow-up 
+&gt; who will be washed out. This information appears in Table S4 of the Supplementary material
+. count if onsetD&lt;=entryD
+
+. drop if onsetD&lt;=entryD
+
+</code></pre>
+<p><em>This table includes invented data (not real person)</em></p>
+<pre><code>
+     +------------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato | kqn | stat |     statd | D00 |       D10 | D20 |       D30 |
+     | invented_person | 31may1985 |   K |   80 | 13mar2015 |   . | 15oct2005 |   . | 01dec2010 |
+     |-----------------+-----------+------------------------------------------------------------|
+     |       D41 | D51 | D61 | D70 | D81  | D91  |      circ  | endo  | pulmo  | gastro  | uro  |
+     | 13apr2014 |   . |   . |   . |   .  |   .  | 10nov2014  |    .  |     .  |      .  |   .  |
+     |----------------------------------------------------------------+-------------------------|
+     | musculo  | hemato  | cancer  | neuro  |    entryD  |   entryA  |     exitD  |     exitA  |
+     |       .  |      .  |      .  |     .  | 01jan2000  | 14.58727  | 10nov2014  |  29.44559  |
+     |------------------------------------------------------------------------------------------|
+     |       tflytd     |       fflytd     |       onsetD     |       onsetA     |     fail     |
+     |    05jan1998     |    13mar2015     |    10nov2014     |     29.44559     |        1     |
+     +------------------------------------------------------------------------------------------+
+
+</code></pre>
+<h3><a href="#information-on-onset-of-mds" id="information-on-onset-of-mds">Information on onset of MDs</a></h3>
+<p>The MD of interest is Mood Disorders (variable <strong>D30</strong> indicated date of diagnosis). Age at Mood Disorder diagnosis (<strong>D30A</strong>) can be generated.</p>
+<pre><code>. gen D30A=(D30-fdato)/365.25
+
+</code></pre>
+<p>The other nine MDs (variables <strong>D00</strong>, <strong>D10</strong>, <strong>D20</strong>, <strong>D41</strong>, <strong>D51</strong>, <strong>D61</strong>, <strong>D70</strong>, <strong>D81</strong>, <strong>D91</strong>) will be treated as prior MDs. Age at of onset can be generated for all of them.</p>
+<pre><code>. gen D00A=(D00-fdato)/365.25
+
+. gen D10A=(D10-fdato)/365.25
+
+. gen D20A=(D20-fdato)/365.25
+
+. gen D41A=(D41-fdato)/365.25
+
+. gen D51A=(D51-fdato)/365.25
+
+. gen D61A=(D61-fdato)/365.25
+
+. gen D70A=(D70-fdato)/365.25
+
+. gen D81A=(D81-fdato)/365.25
+
+. gen D91A=(D91-fdato)/365.25
+
+</code></pre>
+<hr />
+<h2><a href="#3-break-ties" id="3-break-ties">3. Break ties</a></h2>
+<p>For some persons, the MD and GMC occurred on the same day (ties). In a time-to-event setting, individuals are followed until the outcome (GMC), and these persons would not be considered to be exposed to the MD. This would underestimate all associations, given that concurrant pairs of disorders could never occur. To fix it, we broke some of these ties, as explained below.</p>
+<p>First, identify people with both the MD and GMC of interest.</p>
+<pre><code>. gen diff=(onsetD-D30)/365.25 if !missing(D30) &amp; !missing(onsetD)
+
+</code></pre>
+<p>In the cases where the disorders occurred within 5 years of each other, identify how many MDs occurred before or after the GMC.</p>
+<pre><code>. count if diff&gt;0 &amp; diff&lt;5
+
+. gen md_before=r(N) if !missing(D30) &amp;!missing(onsetD)
+
+. count if diff&gt;-5 &amp; diff&lt;0
+
+. gen md_after=r(N) if !missing(D30) &amp;!missing(onsetD)
+
+</code></pre>
+<p><strong>prop_before</strong> is the propotion of persons who develop the MD prior to the GMC, among those who develop the two disorder within 5 years (but not on the same day).</p>
+<pre><code>. gen prop_before=md_before/(md_before+md_after)
+
+</code></pre>
+<p>This proportion is used as a probability to break ties. Each tie will be broken with probability <strong>prop_before</strong> by moving the MD diagnosis date to one day earlier, following a random uniform distribution.</p>
+<pre><code>. gen breaktie=1 if diff==0
+
+. set seed 171018 /*random number*/
+
+. gen random_uniform=runiform() if breaktie==1
+
+. replace D30=D30-1 if breaktie==1 &amp; random_uniform&lt;=prop_before
+
+</code></pre>
+<p>Data for the invented person do not change compared to previous step, because there are no ties.</p>
+<pre><code></code></pre>
+<p><em>This table includes invented data (not real person)</em></p>
+<pre><code>
+     +------------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato | kqn | stat |     statd | D00 |       D10 | D20 |       D30 |
+     | invented_person | 31may1985 |   K |   80 | 13mar2015 |   . | 15oct2005 |   . | 01dec2010 |
+     |-----------------+-----------+------------------------------------------------------------|
+     |       D41 | D51 | D61 | D70 | D81  | D91  |      circ  | endo  | pulmo  | gastro  | uro  |
+     | 13apr2014 |   . |   . |   . |   .  |   .  | 10nov2014  |    .  |     .  |      .  |   .  |
+     |----------------------------------------------------------------+-------------------------|
+     | musculo  | hemato  | cancer  | neuro  |    entryD  |   entryA  |     exitD  |     exitA  |
+     |       .  |      .  |      .  |     .  | 01jan2000  | 14.58727  | 10nov2014  |  29.44559  |
+     |----------------------------------------------------------------+-------------------------|
+     |    tflytd |    fflytd |    onsetD |   onsetA | fail |     D30A | D00A |     D10A | D20A  |
+     | 05jan1998 | 13mar2015 | 10nov2014 | 29.44559 |    1 | 25.50308 |    . | 20.37509 |    .  |
+     |------------------------------------------------------------------------------------------|
+     |       D41A     |    D51A     |     D61A     |     D70A     |     D81A     |     D91A     |
+     |    28.8679     |       .     |        .     |        .     |        .     |        .     |
+     +------------------------------------------------------------------------------------------+
+
+</code></pre>
+<hr />
+<h2><a href="#4-time-varying-variables" id="4-time-varying-variables">4. Time-varying variables</a></h2>
+<h3><a href="#prepare-data-for-time-to-event-analysis" id="prepare-data-for-time-to-event-analysis">Prepare data for time-to-event analysis</a></h3>
+<p>We declare the data to be survival-time data, creating new variables <strong>_st</strong>, <strong>_d</strong>, <strong>_t</strong> and <strong>_t0</strong> <strong>_st</strong> indicates whether the record will be used in survival analysis (1 for used, 0 if ignored) <strong>_d</strong> indicates whether follow-up ends in &ldquo;failure&rdquo; i.e. GMC diagnosis or &ldquo;censoring&rdquo; i.e. censored, disappeared, emigrated, died (1 if failure, 0 if censored) <strong>_t</strong> indicated analysis time (here, age) when record begins <strong>_t</strong> indicates analysis time (here, age) when record ends</p>
+<pre><code>. stset exitA, failure(fail==1) enter(entryA) id(pnr)
+
+</code></pre>
+<p><em>This table includes invented data (not real person)</em></p>
+<pre><code>
+     +------------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato | kqn | stat |     statd | D00 |       D10 | D20 |       D30 |
+     | invented_person | 31may1985 |   K |   80 | 13mar2015 |   . | 15oct2005 |   . | 01dec2010 |
+     |-----------------+-----------+------------------------------------------------------------|
+     |       D41 | D51 | D61 | D70 | D81  | D91  |      circ  | endo  | pulmo  | gastro  | uro  |
+     | 13apr2014 |   . |   . |   . |   .  |   .  | 10nov2014  |    .  |     .  |      .  |   .  |
+     |----------------------------------------------------------------+-------------------------|
+     | musculo  | hemato  | cancer  | neuro  |    entryD  |   entryA  |     exitD  |     exitA  |
+     |       .  |      .  |      .  |     .  | 01jan2000  | 14.58727  | 10nov2014  |  29.44559  |
+     |----------------------------------------------------------------+-------------------------|
+     |    tflytd |    fflytd |    onsetD |   onsetA | fail |     D30A | D00A |     D10A | D20A  |
+     | 05jan1998 | 13mar2015 | 10nov2014 | 29.44559 |    1 | 25.50308 |    . | 20.37509 |    .  |
+     |------------------------------------------------------------------------------------------|
+     |    D41A  | D51A  | D61A  | D70A  | D81A  | D91A  | _st  | _d  |        _t  |        _t0  |
+     | 28.8679  |    .  |    .  |    .  |    .  |    .  |   1  |  1  | 29.445585  |  14.587269  |
+     +------------------------------------------------------------------------------------------+
+
+</code></pre>
+<h3><a href="#split-follow-up-time" id="split-follow-up-time">Split follow-up time</a></h3>
+<p>Each person with a diagnosis of Mood Disorders (<strong>D30</strong>) needs to be “unexposed” until the onset of the disorder, and “exposed” afterwards. In addition, we want to split the follow-up time further depending on time since exposure (6 months, 1, 2, 5, 10, 15, &gt;15 years). For each person, we need to specify on which dates the follow-up time is going to be split.</p>
+<pre><code>. *In those without a diagnosis of a Mood Disorder, set diagnosis age outside of follow-up,
+. *so they remain &quot;unexposed&quot; throughout follow-up
+. replace D30A=exitA+1 if missing(D30A)
+
+. *Split the data at each specified age point after age of Mood Disorder diagnosis. 
+. *This will create new observations for those with a Mood Disorder diagnosis. 
+. *Subjects with no Mood Disorder diagnosis will only have one record.
+. stsplit timesince_D30, after(D30A) at(0,0.5,1,2,5,10,15)
+
+. *We recode the values of the newly created variable, expotimesince_D30.
+. recode timesince_D30 -1=0 0=1 0.5=2 1=3 2=4 5=5 10=6 15=7
+
+. *We generate a binary variable which indicates whether a Mood Disorder diagnosis was received 
+. *(yes=1, no=0)
+. gen expo_D30=1 if timesince_D30&gt;0
+
+. replace expo_D30=0 if timesince_D30==0
+
+</code></pre>
+<p><em>This table includes invented data (not real person)</em> - selected variables</p>
+<pre><code>
+     +--------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato |       D30 |      circ |   entryA |    exitA |   onsetA |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727 | 25.50308 | 29.44559 |
+     |--------------------------------------------------------------------------------------|
+     |      D30A  |  _st  |  _d   |         _t   |        _t0   |  times~30   |  expo_D30   |
+     |  25.50308  |    1  |   0   |   25.50308   |  14.587269   |         0   |         0   |
+     +--------------------------------------------------------------------------------------+
+
+     +--------------------------------------------------------------------------------------+
+  2. |             pnr |     fdato |       D30 |      circ |   entryA |    exitA |   onsetA |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727 | 26.00308 | 29.44559 |
+     |--------------------------------------------------------------------------------------|
+     |      D30A  |  _st  |  _d   |         _t   |        _t0   |  times~30   |  expo_D30   |
+     |  25.50308  |    1  |   0   |   26.00308   |   25.50308   |         1   |         1   |
+     +--------------------------------------------------------------------------------------+
+
+     +--------------------------------------------------------------------------------------+
+  3. |             pnr |     fdato |       D30 |      circ |   entryA |    exitA |   onsetA |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727 | 26.50308 | 29.44559 |
+     |--------------------------------------------------------------------------------------|
+     |      D30A  |  _st  |  _d   |         _t   |        _t0   |  times~30   |  expo_D30   |
+     |  25.50308  |    1  |   0   |   26.50308   |   26.00308   |         2   |         1   |
+     +--------------------------------------------------------------------------------------+
+
+     +--------------------------------------------------------------------------------------+
+  4. |             pnr |     fdato |       D30 |      circ |   entryA |    exitA |   onsetA |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727 | 27.50308 | 29.44559 |
+     |--------------------------------------------------------------------------------------|
+     |      D30A  |  _st  |  _d   |         _t   |        _t0   |  times~30   |  expo_D30   |
+     |  25.50308  |    1  |   0   |   27.50308   |   26.50308   |         3   |         1   |
+     +--------------------------------------------------------------------------------------+
+
+     +--------------------------------------------------------------------------------------+
+  5. |             pnr |     fdato |       D30 |      circ |   entryA |    exitA |   onsetA |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727 | 29.44559 | 29.44559 |
+     |--------------------------------------------------------------------------------------|
+     |      D30A  |  _st  |  _d   |         _t   |        _t0   |  times~30   |  expo_D30   |
+     |  25.50308  |    1  |   1   |  29.445585   |   27.50308   |         4   |         1   |
+     +--------------------------------------------------------------------------------------+
+
+</code></pre>
+<p><em>invented_person</em> now has five observations: one before Mood Disorder diagnosis and four depending on time since Mood Disorder diagnosis. <em>_t</em> of each observation finishes on <em>_t0</em> of the following one.</p>
+<h3><a href="#split-follow-up-time-for-comorbidities" id="split-follow-up-time-for-comorbidities">Split follow-up time for comorbidities</a></h3>
+<p>The remaining nine mental disorders (i.e. other than Mood Disorders, the mental disorder of interest) are used to adjust the models for mental health comorbidity. It is therefore necessary to split the data for the other 9 mental disorders, at the point of diagnosis.</p>
+<pre><code>. replace D00A=exitA+1 if missing(D00A)
+
+. stsplit expo_D00, after(D00A) at(0)
+
+. replace expo_D00 = expo_D00+1
+
+. 
+. replace D10A=exitA+1 if missing(D10A)
+
+. stsplit expo_D10, after(D10A) at(0)
+
+. replace expo_D10 = expo_D10+1
+
+. 
+. replace D20A=exitA+1 if missing(D20A)
+
+. stsplit expo_D20, after(D20A) at(0)
+
+. replace expo_D20 = expo_D20+1
+
+. 
+. replace D41A=exitA+1 if missing(D41A)
+
+. stsplit expo_D41, after(D41A) at(0)
+
+. replace expo_D41 = expo_D41+1
+
+. 
+. replace D51A=exitA+1 if missing(D51A)
+
+. stsplit expo_D51, after(D51A) at(0)
+
+. replace expo_D51 = expo_D51+1
+
+. 
+. replace D61A=exitA+1 if missing(D61A)
+
+. stsplit expo_D61, after(D61A) at(0)
+
+. replace expo_D61 = expo_D61+1
+
+. 
+. replace D70A=exitA+1 if missing(D70A)
+
+. stsplit expo_D70, after(D70A) at(0)
+
+. replace expo_D70 = expo_D70+1
+
+. 
+. replace D81A=exitA+1 if missing(D81A)
+
+. stsplit expo_D81, after(D81A) at(0)
+
+. replace expo_D81 = expo_D81+1
+
+. 
+. replace D91A=exitA+1 if missing(D91A)
+
+. stsplit expo_D91, after(D91A) at(0)
+
+. replace expo_D91 = expo_D91+1
+
+</code></pre>
+<p><em>This table includes invented data (not real person)</em> - selected variables</p>
+<pre><code>
+     +-----------------------------------------------------------------------------------------+
+  1. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  | 20.37509  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 26.50308 | 20.37509 | 21.37509 | 28.8679 | 21.37509  | 21.37509  | 21.37509  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     | 21.37509 | 21.37509 |   1 |  0 | 20.375086 | 14.587269 |        0 |        0 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        0 |        0 |        0 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+     +-----------------------------------------------------------------------------------------+
+  2. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  | 25.50308  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 26.50308 | 20.37509 | 26.50308 | 28.8679 | 26.50308  | 26.50308  | 26.50308  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     | 26.50308 | 26.50308 |   1 |  0 |  25.50308 | 20.375086 |        0 |        0 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        1 |        0 |        0 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+     +-----------------------------------------------------------------------------------------+
+  3. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  | 26.00308  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 27.00308 | 20.37509 | 27.00308 | 28.8679 | 27.00308  | 27.00308  | 27.00308  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     | 27.00308 | 27.00308 |   1 |  0 |  26.00308 |  25.50308 |        1 |        1 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        1 |        0 |        0 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+     +-----------------------------------------------------------------------------------------+
+  4. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  | 26.50308  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 27.50308 | 20.37509 | 27.50308 | 28.8679 | 27.50308  | 27.50308  | 27.50308  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     | 27.50308 | 27.50308 |   1 |  0 |  26.50308 |  26.00308 |        2 |        1 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        1 |        0 |        0 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+     +-----------------------------------------------------------------------------------------+
+  5. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  | 27.50308  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 28.50308 | 20.37509 | 28.50308 | 28.8679 | 28.50308  | 28.50308  | 28.50308  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     | 28.50308 | 28.50308 |   1 |  0 |  27.50308 |  26.50308 |        3 |        1 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        1 |        0 |        0 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+     +-----------------------------------------------------------------------------------------+
+  6. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  |  28.8679  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 30.44559 | 20.37509 | 30.44559 | 28.8679 |  29.8679  |  29.8679  |  29.8679  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     |  29.8679 |  29.8679 |   1 |  0 | 28.867899 |  27.50308 |        4 |        1 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        1 |        0 |        0 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+     +-----------------------------------------------------------------------------------------+
+  7. |             pnr |     fdato |       D30 |      circ |   entryA  |    exitA  |   onsetA  |
+     | invented_person | 31may1985 | 01dec2010 | 10nov2014 | 14.58727  | 29.44559  | 29.44559  |
+     |-----------------------------------------------------+-----------+-----------+-----------|
+     |     D30A |     D00A |     D10A |     D20A |    D41A |     D51A  |     D61A  |     D70A  |
+     | 25.50308 | 30.44559 | 20.37509 | 30.44559 | 28.8679 | 30.44559  | 30.44559  | 30.44559  |
+     |----------+----------+----------+--------------------------------------------------------|
+     |     D81A |     D91A | _st | _d |        _t |       _t0 | times~30 | expo_D30 | expo_D00 |
+     | 30.44559 | 30.44559 |   1 |  1 | 29.445585 | 28.867899 |        4 |        1 |        0 |
+     |----------+----------+----------+--------------------------------------------------------|
+     | expo_D10 | expo_D20 | expo_D41 | expo_D51 | expo_D61 | expo_D70 | expo_D81  | expo_D91  |
+     |        1 |        0 |        1 |        0 |        0 |        0 |        0  |        0  |
+     +-----------------------------------------------------------------------------------------+
+
+</code></pre>
+<p>Note that Substance Use disorders (<strong>D10</strong>) occurred before Mood Disorders (the mental disorder of interest), and it is considered as a time-varying variable. However, onset of Neurotic Disorders (<strong>D41</strong>) occurred after the onset of the prior-disorder, and it is not considered when adjusting for mental health comorbidity.</p>
+<h3><a href="#save-the-data" id="save-the-data">Save the data</a></h3>
+<pre><code>. save &quot;mood_circ.dta&quot;, replace
+
+</code></pre>
+<hr />
+<h2><a href="#5-descriptive-analysis" id="5-descriptive-analysis">5. Descriptive analysis</a></h2>
+<h3><a href="#load-the-data" id="load-the-data">Load the data</a></h3>
+<p>Load the data prepared in steps 1-4</p>
+<pre><code>. use &quot;mood_circ.dta&quot;, clear
+
+</code></pre>
+<h3><a href="#descriptive-statistics-of-circulatory-gmcs-as-the-gmc-of-interest-table-s4-of-the-supplementary-material" id="descriptive-statistics-of-circulatory-gmcs-as-the-gmc-of-interest-table-s4-of-the-supplementary-material">Descriptive statistics of Circulatory GMCs as the GMC of interest (Table S4 of the Supplementary material)</a></h3>
+<pre><code>. *persons at risk of developing a Circulatory GMC during follow-up
+. bysort pnr: gen obs=_n
+
+. count if obs==1
+
+. *new cases of Circulatory GMCs during follow-up
+. count if _d==1
+
+</code></pre>
+<hr />
+<h2><a href="#6-hazard-ratios" id="6-hazard-ratios">6. Hazard ratios</a></h2>
+<h3><a href="#load-the-data" id="load-the-data">Load the data</a></h3>
+<p>Load the data prepared in steps 1-4</p>
+<pre><code>. use &quot;mood_circ.dta&quot;, clear
+
+</code></pre>
+<h2><a href="#generate-covariates" id="generate-covariates">Generate covariates</a></h2>
+<p>Create covariates for prior MD exposure - here we generate 9 variables for adjusting models looking at Mood Disorders *<em>D30</em> as the MD of interest by prior MD comorbidity</p>
+<pre><code>. *create covariates indicating whether diagnosis of other MDs was prior to Mood Disorder diagnosis
+. gen adjust_D30_prev_D00 = expo_D00
+
+. replace adjust_D30_prev_D00 = 0 if D30A&lt;=D00A
+
+. 
+. gen adjust_D30_prev_D10 = expo_D10
+
+. replace adjust_D30_prev_D10 = 0 if D30A&lt;=D10A
+
+. 
+. gen adjust_D30_prev_D20 = expo_D20
+
+. replace adjust_D30_prev_D20 = 0 if D30A&lt;=D20A
+
+. 
+. gen adjust_D30_prev_D41 = expo_D41
+
+. replace adjust_D30_prev_D41 = 0 if D30A&lt;=D41A
+
+. 
+. gen adjust_D30_prev_D51 = expo_D51
+
+. replace adjust_D30_prev_D51 = 0 if D30A&lt;=D51A
+
+. 
+. gen adjust_D30_prev_D61 = expo_D61
+
+. replace adjust_D30_prev_D61 = 0 if D30A&lt;=D61A
+
+. 
+. gen adjust_D30_prev_D70 = expo_D70
+
+. replace adjust_D30_prev_D70 = 0 if D30A&lt;=D70A
+
+. 
+. gen adjust_D30_prev_D81 = expo_D81
+
+. replace adjust_D30_prev_D81 = 0 if D30A&lt;=D81A
+
+. 
+. gen adjust_D30_prev_D91 = expo_D91
+
+. replace adjust_D30_prev_D91 = 0 if D30A&lt;=D91A
+
+. 
+. *create covariate with number of previous MD comorbidities
+. egen count_prevmd_D30 = rowtotal(adjust_D30_prev*)
+
+. *recode count covariate to avoid multicollinearity
+. recode count_prevmd_D30 (1=0)(4/max=4)
+
+</code></pre>
+<p>Set minimum age for follow-up to begin depending on mental disorder - for Mood Disorders this is 10 years of age</p>
+<pre><code>. drop if _t &lt;= 10
+
+. replace _t0 = 10 if _t0 &lt; 10
+
+</code></pre>
+<p>Generate covariate indicating sex (0 for females, 1 for males)</p>
+<pre><code>. gen sex = (kqn==&quot;M&quot;)
+
+</code></pre>
+<h3><a href="#hazard-ratios-for-persons-males-and-females-combined" id="hazard-ratios-for-persons-males-and-females-combined">Hazard ratios for persons (males and females combined)</a></h3>
+<p>Model A (adjusted for sex and calendar time)</p>
+<pre><code>. stcox i.expo_D30 i.sex fdato
+
+</code></pre>
+<p>Model B (further adjusted for mental health comorbidity)</p>
+<pre><code>. stcox i.expo_D30 i.sex fdato adjust_D30_prev* i.count_prevmd
+
+</code></pre>
+<p>Lagged HR - Model A</p>
+<pre><code>. stcox i.timesince_D30 i.sex fdato 
+
+</code></pre>
+<p>Lagged HR - Model B</p>
+<pre><code>. stcox i.timesince_D30 i.sex fdato adjust_D30_prev* i.count_prevmd
+
+</code></pre>
+<h3><a href="#sex-specific-hazard-ratios" id="sex-specific-hazard-ratios">Sex-specific hazard ratios</a></h3>
+<p>Model A (adjusted for sex and calendar time)</p>
+<pre><code>. stcox i.expo_D30##i.sex fdato
+
+</code></pre>
+<p>Model B (further adjusted for mental health comorbidity)</p>
+<pre><code>. stcox i.expo_D30##i.sex fdato adjust_D30_prev* i.count_prevmd
+
+</code></pre>
+<p>Lagged HR - Model A</p>
+<pre><code>. stcox i.timesince_D30##i.sex fdato 
+
+</code></pre>
+<p>Lagged HR - Model B</p>
+<pre><code>. stcox i.timesince_D30##i.sex fdato adjust_D30_prev* i.count_prevmd
+
+</code></pre>
+<h2><a href="#6-absolute-risks" id="6-absolute-risks">6. Absolute risks</a></h2>
+<h3><a href="#load-the-data" id="load-the-data">Load the data</a></h3>
+<p>Load the data prepared in steps 1-4</p>
+<pre><code>. use &quot;mood_circ.dta&quot;, clear
+
+</code></pre>
+<h3><a href="#prepare-data-for-a-multi-state-model" id="prepare-data-for-a-multi-state-model">Prepare data for a multi-state model</a></h3>
+<p>In the Cox proportional hazards models (used to estimate hazard ratios), those who died or emigrated/disappeared were censored at date of death or emigration. The absolute risks can be biased if we do not take into consideration these competing risks events. For this reason, we give a new outcome to those events: 2</p>
+<pre><code>. replace fail = 2 if (fail == 70 | fail == 80 | fail == 90)
+
+</code></pre>
+<p>To fully show how CIPs were generated, the loops used are shown below. As these do not fully appear when run as a command in dyndoc, these have been inserted as comments.</p>
+<h3><a href="#"></a></h3>
+<pre><code>. *keep those with Mood Disorder diagnosis
+. keep if !missing(D30A)
+
+. 
+. *followup now starts at MD onset (time since prior disorder)
+. *age enteredinto original fu - expo diag age
+. *age exited original fu -expo diag age
+. *gen expo_tstart and expo_tstop
+. *new fu has to start before 2000-2016 i.e. have to have diag of Mood Disorders prior to start of 
+&gt; follow-up
+. gen expo_tstart = entryA - D30A
+
+. gen expo_tstop = exitA - D30A
+
+. 
+. *we stset the data, now with time since Mood Disorder diagnosis 
+. *endpoint is the outcome of interest = 1
+. stset expo_tstop, failure(fail==1) enter(expo_tstart) id(pnr)
+
+. 
+. egen age_group = cut(D30A), at(0 20 40 60 80 120)
+
+. levelsof age_group
+
+. local agegroups `r(levels)´
+
+. 
+. tempfile dataset
+
+. save `dataset', replace
+
+. 
+. /*
+&gt; foreach sex in all M K {
+&gt;         use `dataset', clear
+&gt; 
+&gt;         if(&quot;`sex'&quot;!=&quot;all&quot;) {
+&gt;                 keep if kqn==&quot;`sex'&quot;
+&gt;                 }
+&gt;         
+&gt;         foreach age in all `age_groups' {
+&gt;                 preserve
+&gt;                 
+&gt;                 if(&quot;`age'&quot;!=&quot;all&quot;) {
+&gt;                         keep if age_group==&quot;`age'&quot;
+&gt;                         }
+&gt; 
+&gt;                 count
+&gt;                 local obs = `r(N)'
+&gt;                 count if _d==1
+&gt;                 local cases = `r(N)'
+&gt; 
+&gt;                 if (`obs'&gt;50 &amp; `cases'&gt;15) {
+&gt;                         stcompet cip=ci ci_high=hi ci_low=lo, compet(2)
+&gt;                         
+&gt;                         sort _t
+&gt;                         drop if _d!=1
+&gt;                         keep _t cip ci_high ci_low
+&gt;                         drop if missing(cip)
+&gt;                         gen time_since_diag = 0.08 * (ceil(_t/0.08))
+&gt;                         bysort time_since_diag: keep if _n==_N
+&gt;                         drop _t
+&gt; 
+&gt;                         keep if time_since_diag &lt;= 15
+&gt;                 
+&gt;                         sort time_since_diag
+&gt;                         local num_obs _N
+&gt;                         expand 2 in `num_obs'
+&gt;                         replace time_since_diag = 15 if _n==_N
+&gt; 
+&gt;                         local num_obs = N+1
+&gt;                         set obs `num_obs'
+&gt;                         replace cip=0 if missing(time_since_diag)
+&gt;                         replace ci_high=0 if missing(time_since_diag)
+&gt;                         replace ci_low=0 if missing(time_since_diag)
+&gt;                         replace time_since_diag=0 if missing(time_since_diag)
+&gt;                         sort time_since_diag
+&gt; 
+&gt;                         keep time_since_diag cip ci_low ci_high
+&gt;                 
+&gt;                         gen sex = &quot;`sex'&quot;
+&gt;                         gen age_grp =  &quot;`age'&quot;
+&gt; 
+&gt; 
+&gt;                 if (&quot;`age'&quot;!=&quot;all&quot; | &quot;`sex'&quot;!=&quot;all&quot;) {
+&gt;                         append using &quot;cip_mood-circ_results.dta&quot;
+&gt;                         }
+&gt;                 save &quot;cip_mood-circ_results.dta&quot;, replace       
+&gt;                 }
+&gt;         restore
+&gt;         }
+&gt; }
+&gt; */
+</code></pre>
+<h3><a href="#load-the-data" id="load-the-data">Load the data</a></h3>
+<p>Load the data prepared in steps 1-4</p>
+<pre><code>. use &quot;mood_circ.dta&quot;, clear
+
+</code></pre>
+<pre><code>
+</code></pre>
+<pre><code>. tempfile all_population
+
+. save `all_population', replace
+
+</code></pre>
+<h3><a href="#prepare-data-for-a-multi-state-model" id="prepare-data-for-a-multi-state-model">Prepare data for a multi-state model</a></h3>
+<p>In the Cox proportional hazards models (used to estimate hazard ratios), those who died or emigrated/disappeared were censored at date of death or emigration. The absolute risks can be biased if we do not take into consideration these competing risks events. For this reason, we give a new outcome to those events: 2</p>
+<pre><code>. replace fail = 2 if (fail == 70 | fail == 80 | fail == 90)
+
+</code></pre>
+<pre><code>. *keep those with Mood Disorder diagnosis
+. keep if !missing(D30A)
+
+. 
+. rename pnr pnr0
+
+. rename fdato birthday
+
+. rename D30A expo0
+
+. rename entryA entryA0
+
+. rename exitA exitA0
+
+. 
+. gen bd0=birthday-90
+
+. gen bd1=birthday+90
+
+. rangejoin fdato bd0 bd1 using `all_population', by(kqn)
+
+. drop bd*
+
+. 
+. drop if pnr0==pnr
+
+. keep if exitA &gt;= expo0 &amp; (missing(D30A) | D30A &gt; expo0)
+
+. 
+. 
+. gen random_number = runiform()
+
+. bysort pnr0 (random_number): keep if _n &lt;= 5
+
+. 
+. drop random_number
+
+. 
+. gen expo_tstart = entryA - expo0
+
+. gen expo_tstop = exitA - expo0
+
+. drop if expo_tstop&lt;0
+
+. replace expo_tstart=0 if expo_tstart&lt;0
+
+. 
+. *generate a unique id for each person with MD with each of their references
+. egen pnr_pnr0 = group(pnr pnr0)
+
+. 
+. stset expo_tstop, failure(fail==1) enter(expo_tstart) id(pnr_pnr0)
+
+. 
+. egen age_group = cut(D30A), at(0 20 40 60 80 120)
+
+. levelsof age_group
+
+. local agegroups `r(levels)´
+
+. 
+. tempfile dataset
+
+. save `dataset', replace
+
+. 
+. /*
+&gt; foreach sex in all M K {
+&gt;         use `dataset', clear
+&gt; 
+&gt;         if(&quot;`sex'&quot;!=&quot;all&quot;) {
+&gt;                 keep if kqn==&quot;`sex'&quot;
+&gt;                 }
+&gt;         
+&gt;         foreach age in all `age_groups' {
+&gt;                 preserve
+&gt;                 
+&gt;                 if(&quot;`age'&quot;!=&quot;all&quot;) {
+&gt;                         keep if age_group==&quot;`age'&quot;
+&gt;                         }
+&gt; 
+&gt;                 count
+&gt;                 local obs = `r(N)'
+&gt;                 count if _d==1
+&gt;                 local cases = `r(N)'
+&gt; 
+&gt;                 if (`obs'&gt;50 &amp; `cases'&gt;15) {
+&gt;                         stcompet cip=ci ci_high=hi ci_low=lo, compet(2)
+&gt;                         
+&gt;                         sort _t
+&gt;                         drop if _d!=1
+&gt;                         keep _t cip ci_high ci_low
+&gt;                         drop if missing(cip)
+&gt;                         gen time_since_diag = 0.08 * (ceil(_t/0.08))
+&gt;                         bysort time_since_diag: keep if _n==_N
+&gt;                         drop _t
+&gt; 
+&gt;                         keep if time_since_diag &lt;= 15
+&gt;                 
+&gt;                         sort time_since_diag
+&gt;                         local num_obs _N
+&gt;                         expand 2 in `num_obs'
+&gt;                         replace time_since_diag = 15 if _n==_N
+&gt; 
+&gt;                         local num_obs = N+1
+&gt;                         set obs `num_obs'
+&gt;                         replace cip=0 if missing(time_since_diag)
+&gt;                         replace ci_high=0 if missing(time_since_diag)
+&gt;                         replace ci_low=0 if missing(time_since_diag)
+&gt;                         replace time_since_diag=0 if missing(time_since_diag)
+&gt;                         sort time_since_diag
+&gt; 
+&gt;                         keep time_since_diag cip ci_low ci_high
+&gt;                 
+&gt;                         gen sex = &quot;`sex'&quot;
+&gt;                         gen age_grp =  &quot;`age'&quot;
+&gt; 
+&gt; 
+&gt;                 if (&quot;`age'&quot;!=&quot;all&quot; | &quot;`sex'&quot;!=&quot;all&quot;) {
+&gt;                         append using &quot;cip_mood-circ_results.dta&quot;
+&gt;                         }
+&gt;                 save &quot;cip_mood-circ_results.dta&quot;, replace       
+&gt;                 }
+&gt;         restore
+&gt;         }
+&gt; }
+&gt; */
+</code></pre>
